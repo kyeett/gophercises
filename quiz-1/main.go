@@ -8,11 +8,13 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
 
 	filenamePtr := flag.String("csv", "problems.csv", "a csv file in the format of 'question,answer' (default \"problems.csv\"")
+	limitPtr := flag.Int("limit", 10, "the time limit for the quiz in seconds (default 10)")
 	flag.Parse()
 
 	f, err := os.Open(*filenamePtr)
@@ -26,36 +28,60 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	questions := parseRecords(records)
 
-	scanner := bufio.NewScanner(os.Stdin)
+	score := runQuiz(questions, *limitPtr)
+	fmt.Printf("You scored %d out of %d\n", score, len(questions))
+}
 
-	score := 0
-	for i, record := range records {
-		var answer string
+func runQuiz(questions []question, limit int) (score int) {
 
-		question := record[0]
-		correctAnswer := record[1]
+	correctAnswer := make(chan bool)
+	quizComplete := make(chan struct{})
 
-		fmt.Printf("Problem #%d: %s = ", i+1, question)
-
-		//Get answer
-		scanner.Scan()
-		answer = scanner.Text()
-		if answer == "q" {
-			break
+	// Goroutine for user input
+	go func() {
+		for i, question := range questions {
+			scanner := bufio.NewScanner(os.Stdin)
+			fmt.Printf("Problem #%d: %s = ", i+1, question.q)
+			//Get answer
+			scanner.Scan()
+			answer := scanner.Text()
+			if strings.Compare(answer, question.a) == 0 {
+				correctAnswer <- true
+			}
 		}
-		//Check if answer is correct
-		if strings.Compare(answer, correctAnswer) == 0 {
+		close(quizComplete)
+	}()
+
+	// Accept answers until timeout
+	timeout := time.NewTimer(time.Duration(limit) * time.Second)
+	for {
+		select {
+		case <-quizComplete:
+			close(correctAnswer)
+			return
+		case <-timeout.C:
+			fmt.Printf("\nTimeout after %d second(s)\n", limit)
+			return
+		case <-correctAnswer:
 			score++
 		}
 	}
+}
 
-	fmt.Printf("You scored %d out of %d\n", score, len(records))
+func parseRecords(records [][]string) []question {
+	var ret []question
+	for _, record := range records {
+		ret = append(ret, question{
+			q: record[0],
+			a: record[1],
+		})
+	}
+	return ret
+}
 
-	/*	"-csv string"
-		"-limit int"
-
-
-	*/
-
+type question struct {
+	q string
+	a string
 }
