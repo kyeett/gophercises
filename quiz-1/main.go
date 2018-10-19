@@ -35,39 +35,32 @@ func main() {
 }
 
 func runQuiz(questions []question, limit int) (score int) {
-
-	correctAnswer := make(chan bool)
-	quizComplete := make(chan struct{})
-
+	answerCh := make(chan string)
 	// Goroutine for user input
 	go func() {
-		for i, question := range questions {
-			scanner := bufio.NewScanner(os.Stdin)
-			fmt.Printf("Problem #%d: %s = ", i+1, question.q)
+		scanner := bufio.NewScanner(os.Stdin)
+		for {
 			//Get answer
 			scanner.Scan()
-			answer := scanner.Text()
-			if strings.Compare(answer, question.a) == 0 {
-				correctAnswer <- true
-			}
+			answerCh <- scanner.Text()
 		}
-		close(quizComplete)
 	}()
 
 	// Accept answers until timeout
 	timeout := time.NewTimer(time.Duration(limit) * time.Second)
-	for {
+	for i, question := range questions {
+		fmt.Printf("Problem #%d: %s = ", i+1, question.q)
 		select {
-		case <-quizComplete:
-			close(correctAnswer)
-			return
 		case <-timeout.C:
 			fmt.Printf("\nTimeout after %d second(s)\n", limit)
 			return
-		case <-correctAnswer:
-			score++
+		case answer := <-answerCh:
+			if strings.Compare(answer, question.a) == 0 {
+				score++
+			}
 		}
 	}
+	return
 }
 
 func parseRecords(records [][]string) []question {
